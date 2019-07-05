@@ -136,3 +136,8 @@ export interface SwaggerSchema {
     [pathUrl: string]: PathObject;
   };
 }
+
+export interface Options {
+  proxyUrl?: Function | string;
+  headers?: { [key: string]: string };
+}

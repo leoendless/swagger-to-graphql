@@ -5,9 +5,9 @@ import express from 'express';
 import graphqlHTTP from 'express-graphql';
 import graphQLSchema from '../src';
 
-const createServer = async (path, ...schemaArgs) => {
+const createServer = async (path, proxyUrl = null, headers = {}) => {
   const app = express();
-  const schema = await graphQLSchema(path, ...schemaArgs);
+  const schema = await graphQLSchema(path, { proxyUrl, headers });
   app.use(
     '/graphql',
     graphqlHTTP(() => ({

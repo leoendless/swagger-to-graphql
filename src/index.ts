@@ -8,6 +8,7 @@ import {
   GraphQLSchema,
 } from 'graphql';
 import {
+  Options,
   Endpoint,
   Endpoints,
   GraphQLParameters,
@@ -21,29 +22,25 @@ import {
   parseResponse,
 } from './typeMap';
 
-const resolver = (
-  endpoint: Endpoint,
-  proxyUrl: Function | string | null,
-  customHeaders = {},
-) => async (
+const resolver = (endpoint: Endpoint, options: Options) => async (
   _,
   args: GraphQLParameters,
   opts: SwaggerToGraphQLOptions,
   info: GraphQLResolveInfo,
 ) => {
-  const proxy = !proxyUrl
+  const proxy = !options.proxyUrl
     ? opts.GQLProxyBaseUrl
-    : typeof proxyUrl === 'function'
-    ? proxyUrl(opts)
-    : proxyUrl;
+    : typeof options.proxyUrl === 'function'
+    ? options.proxyUrl(opts)
+    : options.proxyUrl;
   const req = endpoint.request(args, proxy);
   if (opts.headers) {
     const { host, ...otherHeaders } = opts.headers;
-    req.headers = Object.assign(req.headers, otherHeaders, customHeaders);
+    req.headers = Object.assign(req.headers, otherHeaders, options.headers);
   } else {
-    req.headers = Object.assign(req.headers, customHeaders);
+    req.headers = Object.assign(req.headers, options.headers);
   }
-  const res = await rp(req);
+  const res = await rp({ ...options, ...req });
   return parseResponse(res, info.returnType);
 };
 
@@ -51,8 +48,7 @@ const getFields = (
   endpoints: Endpoints,
   isMutation: boolean,
   gqlTypes,
-  proxyUrl,
-  headers,
+  options,
 ): GraphQLFieldConfigMap<any, any> => {
   return Object.keys(endpoints)
     .filter((operationId: string) => {
@@ -73,15 +69,15 @@ const getFields = (
         type,
         description: endpoint.description,
         args: mapParametersToFields(endpoint.parameters, operationId, gqlTypes),
-        resolve: resolver(endpoint, proxyUrl, headers),
+        resolve: resolver(endpoint, options),
       };
       return { ...result, [operationId]: gType };
     }, {});
 };
 
-const schemaFromEndpoints = (endpoints: Endpoints, proxyUrl, headers) => {
+const schemaFromEndpoints = (endpoints: Endpoints, options) => {
   const gqlTypes = {};
-  const queryFields = getFields(endpoints, false, gqlTypes, proxyUrl, headers);
+  const queryFields = getFields(endpoints, false, gqlTypes, options);
   if (!Object.keys(queryFields).length) {
     throw new Error('Did not find any GET endpoints');
   }
@@ -94,13 +90,7 @@ const schemaFromEndpoints = (endpoints: Endpoints, proxyUrl, headers) => {
     query: rootType,
   };
 
-  const mutationFields = getFields(
-    endpoints,
-    true,
-    gqlTypes,
-    proxyUrl,
-    headers,
-  );
+  const mutationFields = getFields(endpoints, true, gqlTypes, options);
   if (Object.keys(mutationFields).length) {
     graphQLSchema.mutation = new GraphQLObjectType({
       name: 'Mutation',
@@ -111,15 +101,11 @@ const schemaFromEndpoints = (endpoints: Endpoints, proxyUrl, headers) => {
   return new GraphQLSchema(graphQLSchema);
 };
 
-const build = async (
-  swaggerPath: string,
-  proxyUrl?: Function | string | null,
-  headers?: { [key: string]: string } | undefined,
-) => {
+const build = async (swaggerPath: string, options?: Options | {}) => {
   const swaggerSchema = await loadSchema(swaggerPath);
   const refs = await loadRefs(swaggerPath);
   const endpoints = getAllEndPoints(swaggerSchema, refs);
-  const schema = schemaFromEndpoints(endpoints, proxyUrl, headers);
+  const schema = schemaFromEndpoints(endpoints, options);
   return schema;
 };
 
